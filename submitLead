@@ -1,0 +1,50 @@
+async function submitLead(redirectUrl, tier) {
+  clearSubmitError();
+
+  for (let step = 1; step <= 4; step += 1) {
+    if (!validateStep(step)) {
+      showStep(step);
+      validateStep(step);
+      return;
+    }
+  }
+
+  const selectedMotivation = form.querySelector('input[name="business_motivation"]:checked');
+  const payload = {
+    first_name: form.elements.first_name.value.trim(),
+    email: form.elements.email.value.trim().toLowerCase(),
+    phone: form.elements.phone.value.trim(),
+    business_motivation: selectedMotivation.value,
+    sms_consent: form.elements.sms_consent.checked,
+    tier_selected: tier
+  };
+
+  if (selectedMotivation.value === "other" && otherDetailInput.value.trim()) {
+    payload.goal_other_detail = otherDetailInput.value.trim();
+  }
+
+  const buttons = document.querySelectorAll(".tier-submit");
+  buttons.forEach(function (b) { b.disabled = true; });
+
+  try {
+    const response = await fetch("https://ascend-authority-production.up.railway.app/api/leads", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    const result = await response.json().catch(function () {
+      return { ok: false };
+    });
+
+    if (!response.ok || !result.ok) {
+      throw new Error(result.error || "We couldn't send your request. Please try again.");
+    }
+
+    window.location.assign(redirectUrl);
+  } catch (error) {
+    submitError.textContent = error.message || "We couldn't send your request. Please try again.";
+    submitError.hidden = false;
+    buttons.forEach(function (b) { b.disabled = false; });
+  }
+}
