@@ -179,7 +179,7 @@ function verifyWhopSignature(rawBody, headers) {
   // all) — a permutation not covered by the three manual candidates above.
   let officialLibResult = null;
   try {
-    const wh = new StandardWebhook(WHOP_WEBHOOK_SECRET);
+    const wh = new StandardWebhook(secretKey);
     wh.verify(rawBody.toString("utf8"), {
       "webhook-id": id,
       "webhook-timestamp": timestamp,
