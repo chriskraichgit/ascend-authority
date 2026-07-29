@@ -146,15 +146,20 @@ app.post("/api/webhook/whop", async (req, res) => {
 
     const event = JSON.parse(rawBody.toString("utf8"));
 
-    if (event.type !== "payment.succeeded") {
+    // Whop's dashboard (API v1) sends the event name as "membership_activated"
+    // (some docs show it as "membership.activated" — accept either just in case).
+    // The event root may use "event" or, on older payload shapes, "action".
+    const eventName = event.event || event.action;
+    if (eventName !== "membership_activated" && eventName !== "membership.activated") {
       // We only care about conversions here. Return 2xx so Whop doesn't retry.
       return res.status(200).json({ ok: true, ignored: true });
     }
 
-    const email = event?.data?.user?.email;
+    // Membership events carry a Membership object with User expanded.
+    const email = event?.data?.user?.email || event?.data?.email;
 
     if (!email) {
-      console.warn("[/api/webhook/whop] payment.succeeded with no user.email, ignoring");
+      console.warn(`[/api/webhook/whop] ${eventName} with no email found, ignoring`);
       return res.status(200).json({ ok: true, ignored: true });
     }
 
