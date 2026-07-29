@@ -240,6 +240,18 @@ app.post("/api/webhook/whop", async (req, res) => {
 
 
 // ---------- Abandonment check (runs every 5 min) ----------
+const MOTIVATION_LABELS = {
+  financial_freedom: "I want to make my own money and not answer to anyone",
+  leadership: "I know I'm built to lead, I just need the right system",
+  purpose: "I want to become the best version of myself",
+  impact: "I want to help others and make a real difference",
+  other: "Something else"
+};
+
+function motivationLabel(code) {
+  return MOTIVATION_LABELS[code] || code || "—";
+}
+
 async function nurtureEmailHtml(name) {
   return `
     <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; color: #1a1a1a;">
@@ -262,7 +274,7 @@ async function internalAlertHtml(lead) {
         <li><strong>Email:</strong> ${lead.email}</li>
         <li><strong>Phone:</strong> ${lead.phone || "—"}</li>
         <li><strong>Tier selected:</strong> ${lead.tier_selected || "—"}</li>
-        <li><strong>Motivation:</strong> ${lead.business_motivation || "—"}</li>
+        <li><strong>Motivation:</strong> ${motivationLabel(lead.business_motivation)}</li>
       </ul>
       <p>Reach out if you want to help them across the line.</p>
     </div>
@@ -278,8 +290,8 @@ async function successEmailHtml(lead) {
         <li><strong>Email:</strong> ${lead.email}</li>
         <li><strong>Phone:</strong> ${lead.phone || "—"}</li>
         <li><strong>Tier:</strong> ${lead.tier_selected || "—"}</li>
-        <li><strong>Motivation:</strong> ${lead.business_motivation || "—"}</li>
-        ${lead.goal_other_detail ? `<li><strong>Details:</strong> ${lead.goal_other_detail}</li>` : ""}
+        <li><strong>Motivation:</strong> ${motivationLabel(lead.business_motivation)}</li>
+        ${lead.business_motivation === "other" && lead.goal_other_detail ? `<li><strong>In their words:</strong> ${lead.goal_other_detail}</li>` : ""}
         <li><strong>SMS consent:</strong> ${lead.sms_consent ? "Yes" : "No"}</li>
       </ul>
     </div>
