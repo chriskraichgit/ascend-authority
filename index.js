@@ -172,17 +172,27 @@ app.post("/api/webhook/whop", async (req, res) => {
         "webhook-timestamp": req.headers["webhook-timestamp"],
         "webhook-signature": req.headers["webhook-signature"]
       }));
-      console.warn("[/api/webhook/whop] body (first 300 chars):", rawBody.toString("utf8").slice(0, 300));
+      console.warn("[/api/webhook/whop] body (first 1000 chars):", rawBody.toString("utf8").slice(0, 1000));
     }
 
     const event = JSON.parse(rawBody.toString("utf8"));
 
-    // Whop's dashboard (API v1) sends the event name as "membership_activated"
-    // (some docs show it as "membership.activated" — accept either just in case).
-    // The event root may use "event" or, on older payload shapes, "action".
-    const eventName = event.event || event.action;
-    if (eventName !== "membership_activated" && eventName !== "membership.activated") {
-      // We only care about conversions here. Return 2xx so Whop doesn't retry.
+    // Whop's exact event-name field wasn't reliably identifiable from docs
+    // (guessed "event"/"action" twice, neither matched a real payload). We
+    // now match directly on the data shape confirmed from a live webhook:
+    // a membership record with a "completed" status.
+    const eventName = event.event || event.action || event.type;
+    const membershipId = event?.data?.id;
+    const membershipStatus = String(event?.data?.status || "").toLowerCase();
+    const looksLikeActivation =
+      eventName === "membership_activated" ||
+      eventName === "membership.activated" ||
+      (typeof membershipId === "string" &&
+        membershipId.startsWith("mem_") &&
+        ["completed", "active", "valid"].includes(membershipStatus));
+
+    if (!looksLikeActivation) {
+      console.warn("[/api/webhook/whop] event not recognized as activation, ignoring. eventName:", eventName, "keys:", Object.keys(event));
       return res.status(200).json({ ok: true, ignored: true });
     }
 
