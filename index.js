@@ -177,10 +177,30 @@ app.post("/api/webhook/whop", async (req, res) => {
 
     // Idempotent by nature (email lookup + fixed-value update), so Whop's
     // at-least-once delivery retries are safe without extra dedup logic.
-    await pool.query(
-      `UPDATE leads SET status = 'converted', converted_at = NOW() WHERE email = $1`,
+    const { rows } = await pool.query(
+      `UPDATE leads SET status = 'converted', converted_at = NOW()
+       WHERE email = $1 AND status != 'converted'
+       RETURNING *`,
       [String(email).trim().toLowerCase()]
     );
+
+    // Only send the success email the first time this lead flips to
+    // converted — the WHERE clause above means rows is empty on any
+    // repeat delivery of the same event, so this naturally fires once.
+    if (rows.length > 0) {
+      const lead = rows[0];
+      try {
+        await resend.emails.send({
+          from: FROM_EMAIL,
+          to: SUPPORT_EMAIL,
+          subject: `New signup: ${lead.name || lead.email}`,
+          html: await successEmailHtml(lead)
+        });
+      } catch (sendErr) {
+        console.error("[/api/webhook/whop] failed to send success email:", sendErr);
+        // Don't fail the webhook response over a notification email issue.
+      }
+    }
 
     res.status(200).json({ ok: true });
   } catch (err) {
@@ -216,6 +236,23 @@ async function internalAlertHtml(lead) {
         <li><strong>Motivation:</strong> ${lead.business_motivation || "—"}</li>
       </ul>
       <p>Reach out if you want to help them across the line.</p>
+    </div>
+  `;
+}
+
+async function successEmailHtml(lead) {
+  return `
+    <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; color: #1a1a1a;">
+      <p><strong>✅ New Ascend Authority signup completed.</strong></p>
+      <ul>
+        <li><strong>Name:</strong> ${lead.name || "—"}</li>
+        <li><strong>Email:</strong> ${lead.email}</li>
+        <li><strong>Phone:</strong> ${lead.phone || "—"}</li>
+        <li><strong>Tier:</strong> ${lead.tier_selected || "—"}</li>
+        <li><strong>Motivation:</strong> ${lead.business_motivation || "—"}</li>
+        ${lead.goal_other_detail ? `<li><strong>Details:</strong> ${lead.goal_other_detail}</li>` : ""}
+        <li><strong>SMS consent:</strong> ${lead.sms_consent ? "Yes" : "No"}</li>
+      </ul>
     </div>
   `;
 }
