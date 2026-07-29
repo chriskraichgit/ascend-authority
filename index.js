@@ -2,6 +2,7 @@ require("dotenv").config();
 
 const express = require("express");
 const crypto = require("crypto");
+const { Webhook: StandardWebhook } = require("standardwebhooks");
 const { Pool } = require("pg");
 const cron = require("node-cron");
 const { Resend } = require("resend");
@@ -173,9 +174,25 @@ function verifyWhopSignature(rawBody, headers) {
     });
   });
 
+  // Fourth attempt: the official reference implementation of this spec,
+  // fed the secret exactly as Whop issued it (untouched, "ws_" prefix and
+  // all) — a permutation not covered by the three manual candidates above.
+  let officialLibResult = null;
+  try {
+    const wh = new StandardWebhook(WHOP_WEBHOOK_SECRET);
+    wh.verify(rawBody.toString("utf8"), {
+      "webhook-id": id,
+      "webhook-timestamp": timestamp,
+      "webhook-signature": signatureHeader
+    });
+    officialLibResult = "valid";
+  } catch (err) {
+    officialLibResult = `invalid: ${err.message}`;
+  }
+
   return {
-    valid: Boolean(matchedKey),
-    diagnostics: { received, candidates, matchedKey: matchedKey || null }
+    valid: Boolean(matchedKey) || officialLibResult === "valid",
+    diagnostics: { received, candidates, matchedKey: matchedKey || null, officialLibResult }
   };
 }
 
@@ -193,7 +210,7 @@ app.post("/api/webhook/whop", async (req, res) => {
       console.warn("[/api/webhook/whop] signature verification failed — processing anyway (temporary, for diagnosis)");
       console.warn("[/api/webhook/whop] diagnostics:", JSON.stringify(diagnostics));
     } else {
-      console.log(`[/api/webhook/whop] signature verified via "${diagnostics.matchedKey}" candidate`);
+      console.log(`[/api/webhook/whop] signature verified via "${diagnostics.matchedKey || "standardwebhooks library"}"`);
     }
 
     const event = JSON.parse(rawBody.toString("utf8"));
