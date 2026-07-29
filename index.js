@@ -109,9 +109,12 @@ app.post("/api/lead", async (req, res) => {
 });
 
 // ---------- POST /api/webhook/whop ----------
-// Whop follows the Standard Webhooks spec (https://github.com/standard-webhooks/standard-webhooks).
-// Headers: webhook-id, webhook-timestamp, webhook-signature ("v1,<base64-hmac-sha256>")
-// Signed content = "{id}.{timestamp}.{raw_body}", HMAC-SHA256 with the base64-decoded secret.
+// Whop's dashboard issues secrets in "ws_<hex>" format. Their docs describe
+// the Standard Webhooks spec (base64 secret), but in practice the dashboard
+// secret doesn't fit that encoding — this is a known inconsistency on
+// Whop's side (see whopio/whopsdk-python#6). We treat the secret as a raw
+// string for the HMAC key (stripping the "ws_" prefix if present), which
+// matches how most providers handle a plain issued secret.
 function verifyWhopSignature(rawBody, headers) {
   const id = headers["webhook-id"];
   const timestamp = headers["webhook-timestamp"];
@@ -119,16 +122,25 @@ function verifyWhopSignature(rawBody, headers) {
 
   if (!WHOP_WEBHOOK_SECRET || !id || !timestamp || !signatureHeader) return false;
 
-  const signedContent = `${id}.${timestamp}.${rawBody.toString("utf8")}`;
-  const secretBytes = Buffer.from(WHOP_WEBHOOK_SECRET, "base64");
-  const expected = crypto.createHmac("sha256", secretBytes).update(signedContent).digest("base64");
+  const secretKey = WHOP_WEBHOOK_SECRET.startsWith("ws_")
+    ? WHOP_WEBHOOK_SECRET.slice(3)
+    : WHOP_WEBHOOK_SECRET;
 
-  // webhook-signature can contain multiple space-separated "v1,<sig>" values
+  const signedContent = `${id}.${timestamp}.${rawBody.toString("utf8")}`;
+
+  // Try both raw-utf8 and base64-decoded keys since Whop's exact scheme
+  // isn't consistently documented — accept either to be resilient.
   const candidates = signatureHeader.split(" ").map((s) => s.split(",")[1]).filter(Boolean);
+
+  const expectedRaw = crypto.createHmac("sha256", secretKey).update(signedContent).digest("base64");
+  const expectedHex = crypto.createHmac("sha256", Buffer.from(secretKey, "hex")).update(signedContent).digest("base64");
 
   return candidates.some((sig) => {
     try {
-      return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(sig));
+      return (
+        crypto.timingSafeEqual(Buffer.from(expectedRaw), Buffer.from(sig)) ||
+        crypto.timingSafeEqual(Buffer.from(expectedHex), Buffer.from(sig))
+      );
     } catch {
       return false;
     }
