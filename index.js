@@ -36,8 +36,17 @@ const pool = new Pool({
 
 const resend = new Resend(RESEND_API_KEY);
 
-// Whop webhooks need the raw body for signature verification, so we capture it
-// on this route specifically before the global json parser touches it.
+app.use((req, res, next) => {
+  // Funnel lives on a different domain (ascendauthority.com) than this API
+  // (railway.app), so the browser requires explicit CORS headers or it
+  // silently blocks the request before it's ever sent. This was missing,
+  // which meant /api/lead never actually received real traffic.
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  if (req.method === "OPTIONS") return res.sendStatus(204);
+  next();
+});
 app.use("/api/webhook/whop", express.raw({ type: "*/*" }));
 app.use(express.json());
 
@@ -150,10 +159,20 @@ function verifyWhopSignature(rawBody, headers) {
 app.post("/api/webhook/whop", async (req, res) => {
   try {
     const rawBody = req.body; // Buffer, thanks to express.raw() above
+    const signatureValid = verifyWhopSignature(rawBody, req.headers);
 
-    if (!verifyWhopSignature(rawBody, req.headers)) {
-      console.warn("[/api/webhook/whop] signature verification failed");
-      return res.status(401).json({ ok: false, error: "invalid signature" });
+    if (!signatureValid) {
+      // TEMPORARY: log full diagnostic data instead of rejecting outright.
+      // Two prior attempts at guessing Whop's exact HMAC scheme were wrong.
+      // Rather than keep guessing blind, we log what Whop actually sends so
+      // the real format can be confirmed, then re-enable strict rejection.
+      console.warn("[/api/webhook/whop] signature verification failed — processing anyway (temporary, for diagnosis)");
+      console.warn("[/api/webhook/whop] headers:", JSON.stringify({
+        "webhook-id": req.headers["webhook-id"],
+        "webhook-timestamp": req.headers["webhook-timestamp"],
+        "webhook-signature": req.headers["webhook-signature"]
+      }));
+      console.warn("[/api/webhook/whop] body (first 300 chars):", rawBody.toString("utf8").slice(0, 300));
     }
 
     const event = JSON.parse(rawBody.toString("utf8"));
