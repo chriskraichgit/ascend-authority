@@ -24,9 +24,14 @@ if (!DATABASE_URL) console.error("[FATAL] DATABASE_URL is not set.");
 if (!RESEND_API_KEY) console.error("[FATAL] RESEND_API_KEY is not set.");
 if (!WHOP_WEBHOOK_SECRET) console.warn("[WARN] WHOP_WEBHOOK_SECRET is not set — webhook signature checks will fail closed.");
 
+// This connects to a self-managed Postgres container on Railway's private
+// network, which does not have SSL enabled. Only turn SSL on if the
+// connection string explicitly asks for it (e.g. a managed provider that
+// requires sslmode=require).
+const useSSL = /sslmode=require/i.test(DATABASE_URL || "");
 const pool = new Pool({
   connectionString: DATABASE_URL,
-  ssl: DATABASE_URL && DATABASE_URL.includes("railway") ? { rejectUnauthorized: false } : undefined
+  ssl: useSSL ? { rejectUnauthorized: false } : false
 });
 
 const resend = new Resend(RESEND_API_KEY);
