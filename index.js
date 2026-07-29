@@ -129,50 +129,71 @@ function verifyWhopSignature(rawBody, headers) {
   const timestamp = headers["webhook-timestamp"];
   const signatureHeader = headers["webhook-signature"];
 
-  if (!WHOP_WEBHOOK_SECRET || !id || !timestamp || !signatureHeader) return false;
+  if (!WHOP_WEBHOOK_SECRET || !id || !timestamp || !signatureHeader) {
+    return { valid: false, diagnostics: null };
+  }
 
   const secretKey = WHOP_WEBHOOK_SECRET.startsWith("ws_")
     ? WHOP_WEBHOOK_SECRET.slice(3)
     : WHOP_WEBHOOK_SECRET;
 
   const signedContent = `${id}.${timestamp}.${rawBody.toString("utf8")}`;
+  const received = signatureHeader.split(" ").map((s) => s.split(",")[1]).filter(Boolean);
 
-  // Try both raw-utf8 and base64-decoded keys since Whop's exact scheme
-  // isn't consistently documented — accept either to be resilient.
-  const candidates = signatureHeader.split(" ").map((s) => s.split(",")[1]).filter(Boolean);
+  // Three candidate ways to interpret the secret, since Whop's exact scheme
+  // hasn't matched documentation on two prior attempts. Computing and
+  // logging all three next to what was actually received lets us confirm
+  // the right one from real data instead of guessing again.
+  const candidates = {
+    rawUtf8: crypto.createHmac("sha256", secretKey).update(signedContent).digest("base64"),
+    hexDecoded: (() => {
+      try {
+        return crypto.createHmac("sha256", Buffer.from(secretKey, "hex")).update(signedContent).digest("base64");
+      } catch {
+        return null;
+      }
+    })(),
+    base64Decoded: (() => {
+      try {
+        return crypto.createHmac("sha256", Buffer.from(secretKey, "base64")).update(signedContent).digest("base64");
+      } catch {
+        return null;
+      }
+    })()
+  };
 
-  const expectedRaw = crypto.createHmac("sha256", secretKey).update(signedContent).digest("base64");
-  const expectedHex = crypto.createHmac("sha256", Buffer.from(secretKey, "hex")).update(signedContent).digest("base64");
-
-  return candidates.some((sig) => {
-    try {
-      return (
-        crypto.timingSafeEqual(Buffer.from(expectedRaw), Buffer.from(sig)) ||
-        crypto.timingSafeEqual(Buffer.from(expectedHex), Buffer.from(sig))
-      );
-    } catch {
-      return false;
-    }
+  const matchedKey = Object.keys(candidates).find((key) => {
+    if (!candidates[key]) return false;
+    return received.some((sig) => {
+      try {
+        return crypto.timingSafeEqual(Buffer.from(candidates[key]), Buffer.from(sig));
+      } catch {
+        return false;
+      }
+    });
   });
+
+  return {
+    valid: Boolean(matchedKey),
+    diagnostics: { received, candidates, matchedKey: matchedKey || null }
+  };
 }
 
 app.post("/api/webhook/whop", async (req, res) => {
   try {
     const rawBody = req.body; // Buffer, thanks to express.raw() above
-    const signatureValid = verifyWhopSignature(rawBody, req.headers);
+    const { valid: signatureValid, diagnostics } = verifyWhopSignature(rawBody, req.headers);
 
     if (!signatureValid) {
       // TEMPORARY: log full diagnostic data instead of rejecting outright.
-      // Two prior attempts at guessing Whop's exact HMAC scheme were wrong.
-      // Rather than keep guessing blind, we log what Whop actually sends so
-      // the real format can be confirmed, then re-enable strict rejection.
+      // Two prior guesses at Whop's exact HMAC scheme were wrong. This
+      // computes all three candidate signatures server-side and logs them
+      // next to what was actually received, so the correct one can be
+      // confirmed from real data, then strict rejection re-enabled.
       console.warn("[/api/webhook/whop] signature verification failed — processing anyway (temporary, for diagnosis)");
-      console.warn("[/api/webhook/whop] headers:", JSON.stringify({
-        "webhook-id": req.headers["webhook-id"],
-        "webhook-timestamp": req.headers["webhook-timestamp"],
-        "webhook-signature": req.headers["webhook-signature"]
-      }));
-      console.warn("[/api/webhook/whop] body (first 1000 chars):", rawBody.toString("utf8").slice(0, 1000));
+      console.warn("[/api/webhook/whop] diagnostics:", JSON.stringify(diagnostics));
+    } else {
+      console.log(`[/api/webhook/whop] signature verified via "${diagnostics.matchedKey}" candidate`);
     }
 
     const event = JSON.parse(rawBody.toString("utf8"));
