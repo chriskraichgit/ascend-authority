@@ -1,13 +1,20 @@
 {
   "name": "ascend-authority-backend",
   "version": "1.0.0",
+  "description": "Lead capture + Whop conversion tracking + abandonment retargeting for Ascend Authority",
   "main": "index.js",
+  "type": "commonjs",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
     "express": "^4.19.2",
-    "cors": "^2.8.5",
-    "resend": "^3.2.0"
+    "pg": "^8.12.0",
+    "resend": "^4.0.1",
+    "node-cron": "^3.0.3",
+    "dotenv": "^16.4.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
