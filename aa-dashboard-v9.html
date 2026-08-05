@@ -4299,15 +4299,12 @@
          */
         const WHOP_CLIENT_ID = "app_evpedJg6Uh9e7P";
         const WHOP_REDIRECT_URI =
-          "https://dashboard.ascendauthority.com";
+          "https://ascendauthority.com/dashboard";
         const WHOP_PRODUCT_ID = "prod_QopZCG2zGs87G";
         const WHOP_SCOPE = "openid profile email";
         const WHOP_JOIN_URL = "https://whop.com/ascendauthority/join-vip-tier/";
         const WHOP_PKCE_KEY = "whop_oauth_pkce";
         const WHOP_TOKENS_COOKIE = "whop_tokens";
-        const WHOP_TOKENS_STORAGE_KEY = "ascend-authority-whop-tokens";
-        const WHOP_APP_ORIGIN = new URL(WHOP_REDIRECT_URI).origin;
-        const WHOP_POPUP_TIMEOUT_MS = 120000;
 
         const $ = (s) => document.querySelector(s);
         const esc = (v) =>
@@ -5369,10 +5366,7 @@
         let authStatus = "checking",
           authUser = null,
           authError = "",
-          whopLoginInProgress = false,
-          whopPopup = null,
-          whopPopupWatch = null,
-          whopPopupTimeout = null;
+          whopLoginInProgress = false;
 
         function whopConfigReady() {
           return (
@@ -5407,13 +5401,9 @@
               .split(";")
               .map((item) => item.trim())
               .find((item) => item.startsWith(prefix));
-            if (cookie)
-              return JSON.parse(
-                decodeURIComponent(cookie.slice(prefix.length)),
-              );
-            return JSON.parse(
-              localStorage.getItem(WHOP_TOKENS_STORAGE_KEY) || "null",
-            );
+            return cookie
+              ? JSON.parse(decodeURIComponent(cookie.slice(prefix.length)))
+              : null;
           } catch (error) {
             return null;
           }
@@ -5428,133 +5418,13 @@
             obtained_at: Date.now(),
           };
           document.cookie = `${WHOP_TOKENS_COOKIE}=${encodeURIComponent(JSON.stringify(stored))}; Path=/; Max-Age=2592000; Secure; SameSite=Strict`;
-          localStorage.setItem(WHOP_TOKENS_STORAGE_KEY, JSON.stringify(stored));
           return stored;
         }
         function clearWhopSession() {
           sessionStorage.removeItem(WHOP_PKCE_KEY);
-          localStorage.removeItem(WHOP_PKCE_KEY);
-          localStorage.removeItem(WHOP_TOKENS_STORAGE_KEY);
+          sessionStorage.removeItem("ascend-authority-whop-tokens");
           document.cookie = `${WHOP_TOKENS_COOKIE}=; Path=/; Max-Age=0; Secure; SameSite=Strict`;
         }
-
-        function isEmbeddedInIframe() {
-          return window.self !== window.top;
-        }
-
-        function clearWhopPopupWatch(closePopup = false) {
-          if (whopPopupWatch) clearInterval(whopPopupWatch);
-          if (whopPopupTimeout) clearTimeout(whopPopupTimeout);
-          whopPopupWatch = null;
-          whopPopupTimeout = null;
-          if (closePopup && whopPopup && !whopPopup.closed) whopPopup.close();
-          whopPopup = null;
-        }
-
-        function failWhopPopup(message) {
-          clearWhopPopupWatch();
-          localStorage.removeItem(WHOP_PKCE_KEY);
-          whopLoginInProgress = false;
-          authStatus = "signedOut";
-          authError = message;
-          renderAuth();
-        }
-
-        function watchWhopPopup() {
-          if (whopPopupWatch) clearInterval(whopPopupWatch);
-          if (whopPopupTimeout) clearTimeout(whopPopupTimeout);
-          whopPopupWatch = null;
-          whopPopupTimeout = null;
-          whopPopupWatch = setInterval(() => {
-            if (whopPopup?.closed)
-              failWhopPopup(
-                "The Whop sign-in window was closed before login finished. You can try again.",
-              );
-          }, 500);
-          whopPopupTimeout = setTimeout(() => {
-            clearWhopPopupWatch(true);
-            localStorage.removeItem(WHOP_PKCE_KEY);
-            whopLoginInProgress = false;
-            authStatus = "signedOut";
-            authError =
-              "Whop sign-in timed out. Please open it again and complete login.";
-            renderAuth();
-          }, WHOP_POPUP_TIMEOUT_MS);
-        }
-
-        function handleWhopOAuthMessage(event) {
-          if (
-            event.origin !== WHOP_APP_ORIGIN ||
-            event.source !== whopPopup ||
-            !event.data ||
-            typeof event.data !== "object"
-          )
-            return;
-          if (event.data.type === "whop-oauth-success") {
-            clearWhopPopupWatch();
-            whopLoginInProgress = false;
-            authStatus = "checking";
-            authError = "";
-            initializeWhopAuth();
-          } else if (event.data.type === "whop-oauth-error") {
-            failWhopPopup(
-              event.data.message || "Whop sign-in could not be completed.",
-            );
-          }
-        }
-
-        // TEMP OAUTH DEBUG START — remove this helper and its call after redirect verification.
-        function showWhopOAuthDebug(authorizeUrl) {
-          const redirectMatch = authorizeUrl.match(/[?&]redirect_uri=([^&]*)/);
-          const clientIdMatch = authorizeUrl.match(/[?&]client_id=([^&]*)/);
-          const decodedRedirectUri = decodeURIComponent(
-            (redirectMatch?.[1] || "").replace(/\+/g, " "),
-          );
-          const sentClientId = decodeURIComponent(
-            (clientIdMatch?.[1] || "").replace(/\+/g, " "),
-          );
-
-          console.log("[Whop OAuth Debug] authorizeUrl:", authorizeUrl);
-          console.log(
-            "[Whop OAuth Debug] decoded redirect_uri:",
-            decodedRedirectUri,
-          );
-          console.log("[Whop OAuth Debug] client_id:", sentClientId);
-
-          let panel = document.getElementById("whop-oauth-debug-panel");
-          if (!panel) {
-            panel = document.createElement("div");
-            panel.id = "whop-oauth-debug-panel";
-            Object.assign(panel.style, {
-              position: "fixed",
-              right: "16px",
-              bottom: "16px",
-              zIndex: "2147483647",
-              width: "min(520px, calc(100vw - 32px))",
-              maxHeight: "45vh",
-              overflow: "auto",
-              padding: "14px 16px",
-              border: "2px solid #a78bfa",
-              borderRadius: "10px",
-              background: "#111018",
-              color: "#ffffff",
-              boxShadow: "0 12px 36px rgba(0, 0, 0, 0.45)",
-              font: "12px/1.5 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-              whiteSpace: "pre-wrap",
-              overflowWrap: "anywhere",
-            });
-            document.body.appendChild(panel);
-          }
-          panel.textContent =
-            "WHOP OAUTH DEBUG (TEMPORARY)\n\n" +
-            "authorizeUrl:\n" +
-            authorizeUrl +
-            "\n\nredirect_uri (decoded):\n" +
-            decodedRedirectUri +
-            "\n\nclient_id:\n" +
-            sentClientId;
-        }
-        // TEMP OAUTH DEBUG END
 
         async function beginWhopLogin() {
           if (whopLoginInProgress) return;
@@ -5566,27 +5436,12 @@
           }
           whopLoginInProgress = true;
           try {
-            const popupFlow = isEmbeddedInIframe();
-            if (popupFlow) {
-              whopPopup = window.open(
-                "about:blank",
-                "_blank",
-                "popup=yes,width=560,height=760,resizable=yes,scrollbars=yes",
-              );
-              if (!whopPopup)
-                throw new Error(
-                  "Whop sign-in was blocked. Allow popups for this page and try again.",
-                );
-            }
             const pkce = {
               code_verifier: randomString(32),
               state: randomString(16),
               nonce: randomString(16),
-              flow: popupFlow ? "popup" : "redirect",
             };
-            const pkceStorage =
-              pkce.flow === "popup" ? localStorage : sessionStorage;
-            pkceStorage.setItem(WHOP_PKCE_KEY, JSON.stringify(pkce));
+            sessionStorage.setItem(WHOP_PKCE_KEY, JSON.stringify(pkce));
             const params = new URLSearchParams({
               response_type: "code",
               client_id: WHOP_CLIENT_ID,
@@ -5597,24 +5452,12 @@
               code_challenge: await sha256(pkce.code_verifier),
               code_challenge_method: "S256",
             });
-            const authorizeUrl =
-              "https://api.whop.com/oauth/authorize?" + params;
-            showWhopOAuthDebug(authorizeUrl);
-            if (pkce.flow === "popup") {
-              whopPopup.location.replace(authorizeUrl);
-              authStatus = "popupWaiting";
-              authError = "";
-              renderAuth();
-              watchWhopPopup();
-            } else {
-              window.location.assign(authorizeUrl);
-            }
+            window.location.assign(
+              "https://api.whop.com/oauth/authorize?" + params,
+            );
           } catch (error) {
-            if (whopPopup && !whopPopup.closed) whopPopup.close();
-            whopPopup = null;
             whopLoginInProgress = false;
             sessionStorage.removeItem(WHOP_PKCE_KEY);
-            localStorage.removeItem(WHOP_PKCE_KEY);
             authError =
               error instanceof Error
                 ? error.message
@@ -5647,23 +5490,13 @@
             throw new Error(params.get("error_description") || oauthError);
           }
           if (!code) return null;
-          let sessionPkce = null,
-            localPkce = null;
+          let stored = null;
           try {
-            sessionPkce = JSON.parse(
+            stored = JSON.parse(
               sessionStorage.getItem(WHOP_PKCE_KEY) || "null",
             );
           } catch (error) {}
-          try {
-            localPkce = JSON.parse(
-              localStorage.getItem(WHOP_PKCE_KEY) || "null",
-            );
-          } catch (error) {}
-          const stored = [sessionPkce, localPkce].find(
-            (entry) => entry?.state === returnedState,
-          );
           sessionStorage.removeItem(WHOP_PKCE_KEY);
-          localStorage.removeItem(WHOP_PKCE_KEY);
           if (!stored || returnedState !== stored.state) {
             removeOAuthParams();
             throw new Error(
@@ -5690,10 +5523,7 @@
                 "Whop token exchange failed (" + response.status + ").",
             );
           }
-          return {
-            tokens: storeTokens(await response.json()),
-            flow: stored.flow || "redirect",
-          };
+          return storeTokens(await response.json());
         }
 
         async function refreshTokens(tokens = getStoredTokens()) {
@@ -5809,21 +5639,7 @@
               renderAuth();
               return;
             }
-            const callbackResult = hasCallback
-              ? await exchangeWhopCode()
-              : null;
-            if (
-              callbackResult?.flow === "popup" &&
-              window.opener &&
-              window.opener !== window
-            ) {
-              window.opener.postMessage(
-                { type: "whop-oauth-success" },
-                WHOP_APP_ORIGIN,
-              );
-              setTimeout(() => window.close(), 50);
-              return;
-            }
+            if (hasCallback) await exchangeWhopCode();
             if (!getStoredTokens()) {
               authStatus = "signedOut";
               renderAuth();
@@ -5845,20 +5661,6 @@
             state = loadDashboardState();
             render();
           } catch (error) {
-            if (window.opener && window.opener !== window) {
-              window.opener.postMessage(
-                {
-                  type: "whop-oauth-error",
-                  message:
-                    error instanceof Error
-                      ? error.message
-                      : "Whop sign-in failed.",
-                },
-                WHOP_APP_ORIGIN,
-              );
-              setTimeout(() => window.close(), 50);
-              return;
-            }
             authStatus = "error";
             authError =
               error instanceof Error ? error.message : "Whop sign-in failed.";
@@ -6161,13 +5963,10 @@
           );
           applyAccentColors("#8A5CF6", authMode);
           const checking = authStatus === "checking",
-            popupWaiting = authStatus === "popupWaiting",
             inactive = authStatus === "inactive",
             failed = authStatus === "error";
           const title = checking
             ? "Checking your membership…"
-            : popupWaiting
-              ? "Finish signing in with Whop"
             : inactive
               ? "Your Whop membership isn’t active"
               : failed
@@ -6175,8 +5974,6 @@
                 : "Your business dashboard awaits.";
           const copy = checking
             ? "Securely verifying your Whop account and Ascend Authority access."
-            : popupWaiting
-              ? "Complete login in the Whop window. This dashboard will update automatically when you’re finished."
             : inactive
               ? "This dashboard is only available to members with an active paid Ascend Authority membership."
               : failed
@@ -6184,8 +5981,6 @@
                 : "Sign in with the Whop account connected to your paid Ascend Authority membership.";
           const action = inactive
             ? `<a class="auth-submit" href="${WHOP_JOIN_URL}">View membership options →</a><button class="auth-link" id="auth-signout" type="button">Sign in with a different Whop account</button>`
-            : popupWaiting
-              ? `<button class="auth-link" id="auth-popup-retry" type="button">Restart Whop sign-in</button>`
             : failed
               ? `<button class="auth-submit" id="auth-retry" type="button">Try again →</button>`
               : checking
@@ -6210,16 +6005,6 @@
             };
           const logout = $("#auth-signout");
           if (logout) logout.onclick = () => window.logout();
-          const popupRetry = $("#auth-popup-retry");
-          if (popupRetry)
-            popupRetry.onclick = () => {
-              clearWhopPopupWatch(true);
-              localStorage.removeItem(WHOP_PKCE_KEY);
-              whopLoginInProgress = false;
-              authStatus = "signedOut";
-              authError = "";
-              beginWhopLogin();
-            };
         }
 
         const screens = [
@@ -7271,7 +7056,6 @@
         }
         window.refreshTokens = refreshTokens;
         window.logout = logout;
-        window.addEventListener("message", handleWhopOAuthMessage);
         initializeWhopAuth();
       })();
     </script>
