@@ -5503,6 +5503,59 @@
           }
         }
 
+        // TEMP OAUTH DEBUG START — remove this helper and its call after redirect verification.
+        function showWhopOAuthDebug(authorizeUrl) {
+          const redirectMatch = authorizeUrl.match(/[?&]redirect_uri=([^&]*)/);
+          const clientIdMatch = authorizeUrl.match(/[?&]client_id=([^&]*)/);
+          const decodedRedirectUri = decodeURIComponent(
+            (redirectMatch?.[1] || "").replace(/\+/g, " "),
+          );
+          const sentClientId = decodeURIComponent(
+            (clientIdMatch?.[1] || "").replace(/\+/g, " "),
+          );
+
+          console.log("[Whop OAuth Debug] authorizeUrl:", authorizeUrl);
+          console.log(
+            "[Whop OAuth Debug] decoded redirect_uri:",
+            decodedRedirectUri,
+          );
+          console.log("[Whop OAuth Debug] client_id:", sentClientId);
+
+          let panel = document.getElementById("whop-oauth-debug-panel");
+          if (!panel) {
+            panel = document.createElement("div");
+            panel.id = "whop-oauth-debug-panel";
+            Object.assign(panel.style, {
+              position: "fixed",
+              right: "16px",
+              bottom: "16px",
+              zIndex: "2147483647",
+              width: "min(520px, calc(100vw - 32px))",
+              maxHeight: "45vh",
+              overflow: "auto",
+              padding: "14px 16px",
+              border: "2px solid #a78bfa",
+              borderRadius: "10px",
+              background: "#111018",
+              color: "#ffffff",
+              boxShadow: "0 12px 36px rgba(0, 0, 0, 0.45)",
+              font: "12px/1.5 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+              whiteSpace: "pre-wrap",
+              overflowWrap: "anywhere",
+            });
+            document.body.appendChild(panel);
+          }
+          panel.textContent =
+            "WHOP OAUTH DEBUG (TEMPORARY)\n\n" +
+            "authorizeUrl:\n" +
+            authorizeUrl +
+            "\n\nredirect_uri (decoded):\n" +
+            decodedRedirectUri +
+            "\n\nclient_id:\n" +
+            sentClientId;
+        }
+        // TEMP OAUTH DEBUG END
+
         async function beginWhopLogin() {
           if (whopLoginInProgress) return;
           if (!whopConfigReady()) {
@@ -5546,6 +5599,7 @@
             });
             const authorizeUrl =
               "https://api.whop.com/oauth/authorize?" + params;
+            showWhopOAuthDebug(authorizeUrl);
             if (pkce.flow === "popup") {
               whopPopup.location.replace(authorizeUrl);
               authStatus = "popupWaiting";
