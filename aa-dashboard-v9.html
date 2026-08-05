@@ -5575,7 +5575,6 @@
           url.searchParams.append("product_ids", WHOP_PRODUCT_ID);
           url.searchParams.append("statuses", "active");
           url.searchParams.append("user_ids", userId);
-          url.searchParams.set("first", "10");
           const response = await fetch(url, {
             headers: { Authorization: "Bearer " + accessToken },
           });
