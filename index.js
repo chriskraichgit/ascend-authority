@@ -38,6 +38,10 @@ const pool = new Pool({
 const resend = new Resend(RESEND_API_KEY);
 
 app.use((req, res, next) => {
+  res.setHeader(
+    "Content-Security-Policy",
+    "frame-ancestors 'self' https://whop.com https://*.whop.com;"
+  );
   // Funnel lives on a different domain (ascendauthority.com) than this API
   // (railway.app), so the browser requires explicit CORS headers or it
   // silently blocks the request before it's ever sent. This was missing,
@@ -50,6 +54,11 @@ app.use((req, res, next) => {
 });
 app.use("/api/webhook/whop", express.raw({ type: "*/*" }));
 app.use(express.json());
+
+// ---------- Dashboard ----------
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "aa-dashboard-v9.html"));
+});
 
 // ---------- Boot: run migrations ----------
 async function runMigrations() {
