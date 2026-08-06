@@ -4301,7 +4301,8 @@
         const WHOP_REDIRECT_URI =
           "https://ascendauthority.com/dashboard";
         const WHOP_PRODUCT_ID = "prod_QopZCG2zGs87G";
-        const WHOP_SCOPE = "openid profile email";
+        const WHOP_SCOPE =
+          "openid profile email member:basic:read member:email:read";
         const WHOP_JOIN_URL = "https://whop.com/ascendauthority/join-vip-tier/";
         const WHOP_PKCE_KEY = "whop_oauth_pkce";
         const WHOP_TOKENS_COOKIE = "whop_tokens";
@@ -5571,32 +5572,43 @@
           return response.json();
         }
 
-async function getWhopMembership(accessToken, userId) {
-  const url = new URL("https://api.whop.com/api/v1/memberships");
-  url.searchParams.append("product_ids", WHOP_PRODUCT_ID);
-  url.searchParams.append("statuses", "active");
-  url.searchParams.append("user_ids", userId);
-  url.searchParams.set("first", "10");
-  const response = await fetch(url, {
-    headers: { Authorization: "Bearer " + accessToken },
-  });
-  if (!response.ok)
-    throw new Error(
-      "Whop could not verify your Ascend Authority membership (" +
-        response.status +
-        ")."
-    );
-  const payload = await response.json(),
-    memberships = Array.isArray(payload.data) ? payload.data : [];
-  return (
-    memberships.find(
-      (membership) =>
-        membership.product?.id === WHOP_PRODUCT_ID &&
-        membership.user?.id === userId &&
-        membership.status === "active",
-    ) || null
-  );
-}
+        async function getWhopMembership(accessToken, userId) {
+          const url = new URL(
+            "https://api.whop.com/api/v1/memberships",
+          );
+          url.searchParams.set("product_id", WHOP_PRODUCT_ID);
+          url.searchParams.set("status", "active");
+          url.searchParams.set("user_id", userId);
+          url.searchParams.set("first", "10");
+          const response = await fetch(url, {
+            headers: {
+              Authorization: "Bearer " + accessToken,
+              "Api-Version-Date": "2026-08-05-1",
+            },
+          });
+          if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(
+              error.error?.message ||
+                error.error_description ||
+                "Whop could not verify your Ascend Authority membership (" +
+                  response.status +
+                  ").",
+            );
+          }
+          const payload = await response.json(),
+            memberships = Array.isArray(payload.data) ? payload.data : [];
+          return (
+            memberships.find(
+              (membership) =>
+                (membership.product_id === WHOP_PRODUCT_ID ||
+                  membership.product?.id === WHOP_PRODUCT_ID) &&
+                (membership.user_id === userId ||
+                  membership.user?.id === userId) &&
+                membership.status === "active",
+            ) || null
+          );
+        }
 
         function normalizeWhopUser(user = {}, membership = null) {
           const memberUser = membership?.user || {};
