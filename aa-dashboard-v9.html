@@ -4299,7 +4299,7 @@
          */
         const WHOP_CLIENT_ID = "app_evpedJg6Uh9e7P";
         const WHOP_REDIRECT_URI =
-          "https://dashboard.ascendauthority.com";
+          "https://ascendauthority.com/dashboard";
         const WHOP_PRODUCT_ID = "prod_QopZCG2zGs87G";
         const WHOP_SCOPE = "openid profile email";
         const WHOP_JOIN_URL = "https://whop.com/ascendauthority/join-vip-tier/";
@@ -5440,12 +5440,13 @@
               code_verifier: randomString(32),
               state: randomString(16),
               nonce: randomString(16),
+              redirect_uri: WHOP_REDIRECT_URI,
             };
             sessionStorage.setItem(WHOP_PKCE_KEY, JSON.stringify(pkce));
             const params = new URLSearchParams({
               response_type: "code",
               client_id: WHOP_CLIENT_ID,
-              redirect_uri: WHOP_REDIRECT_URI,
+              redirect_uri: pkce.redirect_uri,
               scope: WHOP_SCOPE,
               state: pkce.state,
               nonce: pkce.nonce,
@@ -5510,7 +5511,7 @@
             body: JSON.stringify({
               grant_type: "authorization_code",
               code,
-              redirect_uri: WHOP_REDIRECT_URI,
+              redirect_uri: stored.redirect_uri,
               client_id: WHOP_CLIENT_ID,
               code_verifier: stored.code_verifier,
             }),
