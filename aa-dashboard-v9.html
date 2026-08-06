@@ -4299,7 +4299,7 @@
          */
         const WHOP_CLIENT_ID = "app_evpedJg6Uh9e7P";
         const WHOP_REDIRECT_URI =
-          "https://dashboard.ascendauthority.com/";
+          "https://ascendauthority.com/dashboard";
         const WHOP_PRODUCT_ID = "prod_QopZCG2zGs87G";
         const WHOP_SCOPE = "openid profile email";
         const WHOP_JOIN_URL = "https://whop.com/ascendauthority/join-vip-tier/";
@@ -5366,48 +5366,7 @@
         let authStatus = "checking",
           authUser = null,
           authError = "",
-          whopLoginInProgress = false,
-          whopPopup = null,
-          whopPopupPoll = null,
-          whopPopupTimeout = null;
-
-        function isEmbeddedInIframe() {
-          return window.self !== window.top;
-        }
-
-        function stopWatchingWhopPopup(closePopup = false) {
-          if (whopPopupPoll) clearInterval(whopPopupPoll);
-          if (whopPopupTimeout) clearTimeout(whopPopupTimeout);
-          whopPopupPoll = null;
-          whopPopupTimeout = null;
-          if (closePopup && whopPopup && !whopPopup.closed) whopPopup.close();
-          whopPopup = null;
-        }
-
-        function resetWhopPopupLogin(message) {
-          stopWatchingWhopPopup(true);
-          sessionStorage.removeItem(WHOP_PKCE_KEY);
-          localStorage.removeItem(WHOP_PKCE_KEY);
           whopLoginInProgress = false;
-          authStatus = "signedOut";
-          authError = message;
-          renderAuth();
-        }
-
-        function watchWhopPopup() {
-          whopPopupPoll = setInterval(() => {
-            if (whopPopup && whopPopup.closed) {
-              resetWhopPopupLogin(
-                "The Whop sign-in window was closed before login finished.",
-              );
-            }
-          }, 500);
-          whopPopupTimeout = setTimeout(() => {
-            resetWhopPopupLogin(
-              "Whop sign-in timed out before login finished. Please try again.",
-            );
-          }, 120000);
-        }
 
         function whopConfigReady() {
           return (
@@ -5463,7 +5422,6 @@
         }
         function clearWhopSession() {
           sessionStorage.removeItem(WHOP_PKCE_KEY);
-          localStorage.removeItem(WHOP_PKCE_KEY);
           sessionStorage.removeItem("ascend-authority-whop-tokens");
           document.cookie = `${WHOP_TOKENS_COOKIE}=; Path=/; Max-Age=0; Secure; SameSite=Strict`;
         }
@@ -5477,27 +5435,13 @@
             return;
           }
           whopLoginInProgress = true;
-          const embedded = isEmbeddedInIframe();
           try {
-            if (embedded) {
-              whopPopup = window.open(
-                "about:blank",
-                "_blank",
-                "popup=yes,width=560,height=760,resizable=yes,scrollbars=yes",
-              );
-              if (!whopPopup)
-                throw new Error(
-                  "Please allow popups to sign in with Whop.",
-                );
-            }
             const pkce = {
               code_verifier: randomString(32),
               state: randomString(16),
               nonce: randomString(16),
             };
-            const storedPkce = JSON.stringify(pkce);
-            sessionStorage.setItem(WHOP_PKCE_KEY, storedPkce);
-            if (embedded) localStorage.setItem(WHOP_PKCE_KEY, storedPkce);
+            sessionStorage.setItem(WHOP_PKCE_KEY, JSON.stringify(pkce));
             const params = new URLSearchParams({
               response_type: "code",
               client_id: WHOP_CLIENT_ID,
@@ -5508,21 +5452,12 @@
               code_challenge: await sha256(pkce.code_verifier),
               code_challenge_method: "S256",
             });
-            const authorizeUrl =
-              "https://api.whop.com/oauth/authorize?" + params;
-            if (embedded) {
-              whopPopup.location.replace(authorizeUrl);
-              authStatus = "popupWaiting";
-              renderAuth();
-              watchWhopPopup();
-            } else {
-              window.location.assign(authorizeUrl);
-            }
+            window.location.assign(
+              "https://api.whop.com/oauth/authorize?" + params,
+            );
           } catch (error) {
-            stopWatchingWhopPopup(true);
             whopLoginInProgress = false;
             sessionStorage.removeItem(WHOP_PKCE_KEY);
-            localStorage.removeItem(WHOP_PKCE_KEY);
             authError =
               error instanceof Error
                 ? error.message
@@ -5558,13 +5493,10 @@
           let stored = null;
           try {
             stored = JSON.parse(
-              sessionStorage.getItem(WHOP_PKCE_KEY) ||
-                localStorage.getItem(WHOP_PKCE_KEY) ||
-                "null",
+              sessionStorage.getItem(WHOP_PKCE_KEY) || "null",
             );
           } catch (error) {}
           sessionStorage.removeItem(WHOP_PKCE_KEY);
-          localStorage.removeItem(WHOP_PKCE_KEY);
           if (!stored || returnedState !== stored.state) {
             removeOAuthParams();
             throw new Error(
@@ -5638,21 +5570,32 @@
           return response.json();
         }
 
-        async function getWhopMembership(accessToken, userId) {
-          const response = await fetch(
-            "https://api.whop.com/api/v1/me/has_access/biz_PGFQNZRzxYlHMN",
-            { headers: { Authorization: "Bearer " + accessToken } }
-          );
-          if (!response.ok)
-            throw new Error(
-              "Whop could not verify your Ascend Authority membership (" +
-                response.status +
-                ")."
-            );
-          const payload = await response.json();
-          if (!payload.has_access) return null;
-          return { user: { id: userId }, status: "active" };
-        }
+async function getWhopMembership(accessToken, userId) {
+  const url = new URL("https://api.whop.com/api/v1/memberships");
+  url.searchParams.append("product_ids", WHOP_PRODUCT_ID);
+  url.searchParams.append("statuses", "active");
+  url.searchParams.append("user_ids", userId);
+  url.searchParams.set("first", "10");
+  const response = await fetch(url, {
+    headers: { Authorization: "Bearer " + accessToken },
+  });
+  if (!response.ok)
+    throw new Error(
+      "Whop could not verify your Ascend Authority membership (" +
+        response.status +
+        ")."
+    );
+  const payload = await response.json(),
+    memberships = Array.isArray(payload.data) ? payload.data : [];
+  return (
+    memberships.find(
+      (membership) =>
+        membership.product?.id === WHOP_PRODUCT_ID &&
+        membership.user?.id === userId &&
+        membership.status === "active",
+    ) || null
+  );
+}
 
         function normalizeWhopUser(user = {}, membership = null) {
           const memberUser = membership?.user || {};
@@ -5696,17 +5639,7 @@
               renderAuth();
               return;
             }
-            if (hasCallback) {
-              await exchangeWhopCode();
-              if (window.opener && window.opener !== window) {
-                window.opener.postMessage(
-                  { type: "whop-oauth-success" },
-                  new URL(WHOP_REDIRECT_URI).origin,
-                );
-                window.close();
-                return;
-              }
-            }
+            if (hasCallback) await exchangeWhopCode();
             if (!getStoredTokens()) {
               authStatus = "signedOut";
               renderAuth();
@@ -6031,12 +5964,9 @@
           applyAccentColors("#8A5CF6", authMode);
           const checking = authStatus === "checking",
             inactive = authStatus === "inactive",
-            failed = authStatus === "error",
-            popupWaiting = authStatus === "popupWaiting";
+            failed = authStatus === "error";
           const title = checking
             ? "Checking your membership…"
-            : popupWaiting
-              ? "Finish signing in with Whop"
             : inactive
               ? "Your Whop membership isn’t active"
               : failed
@@ -6044,8 +5974,6 @@
                 : "Your business dashboard awaits.";
           const copy = checking
             ? "Securely verifying your Whop account and Ascend Authority access."
-            : popupWaiting
-              ? "Complete sign-in in the Whop window. If it did not open, restart the popup below."
             : inactive
               ? "This dashboard is only available to members with an active paid Ascend Authority membership."
               : failed
@@ -6053,8 +5981,6 @@
                 : "Sign in with the Whop account connected to your paid Ascend Authority membership.";
           const action = inactive
             ? `<a class="auth-submit" href="${WHOP_JOIN_URL}">View membership options →</a><button class="auth-link" id="auth-signout" type="button">Sign in with a different Whop account</button>`
-            : popupWaiting
-              ? `<button class="auth-submit" id="whop-restart" type="button">Restart Whop sign-in →</button>`
             : failed
               ? `<button class="auth-submit" id="auth-retry" type="button">Try again →</button>`
               : checking
@@ -6076,15 +6002,6 @@
               authStatus = "signedOut";
               authError = "";
               renderAuth();
-            };
-          const restart = $("#whop-restart");
-          if (restart)
-            restart.onclick = () => {
-              stopWatchingWhopPopup(true);
-              whopLoginInProgress = false;
-              authStatus = "signedOut";
-              authError = "";
-              beginWhopLogin();
             };
           const logout = $("#auth-signout");
           if (logout) logout.onclick = () => window.logout();
@@ -7139,17 +7056,6 @@
         }
         window.refreshTokens = refreshTokens;
         window.logout = logout;
-        window.addEventListener("message", (event) => {
-          if (
-            event.origin !== new URL(WHOP_REDIRECT_URI).origin ||
-            event.source !== whopPopup ||
-            event.data?.type !== "whop-oauth-success"
-          )
-            return;
-          stopWatchingWhopPopup(true);
-          whopLoginInProgress = false;
-          initializeWhopAuth();
-        });
         initializeWhopAuth();
       })();
     </script>
